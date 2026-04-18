@@ -50,6 +50,9 @@ CXX := clang++	# C++ compiler
 AR := llvm-ar	# lib tool
 LD := clang++	# linker
 
+# vars for dealing with version skew
+IS_CLANG_PRE16 := $(shell $(CC) --version 2>/dev/null | grep -o 'clang version [0-9]*' | cut -d' ' -f3 | awk '{print ($$1 < 16) ? "yes" : ""}')
+
 # baseline options
 CFLAGS += -fPIC -emit-llvm
 LDFLAGS += -fuse-ld=lld -pie -lpthread -ldl -Wl,--icf=none
@@ -156,7 +159,11 @@ OBJS_LIBS += \
 endif
 
 CFLAGS	+= $(DEFINES) $(INCLUDE_DIRS)
-CCFLAGS += $(CFLAGS) -std=gnu89 -Wno-error=incompatible-function-pointer-types
+ifneq ($(IS_CLANG_PRE16),)
+CCFLAGS += $(CFLAGS) -std=gnu89 -Wno-error=incompatible-pointer-types
+else
+CCFLAGS += $(CFLAGS) -std=gnu89 -Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types -Wno-error=incompatible-function-pointer-types-strict
+endif
 CXXFLAGS += $(CFLAGS) -std=gnu++17
 
 LDFLAGS += \
@@ -168,7 +175,7 @@ LDFLAGS += \
 ##
 
 .PHONY:
-	clean install rebuild all
+	clean install all
 
 all: build
 
@@ -182,9 +189,6 @@ install: build
 	chmod 755 $(BINDIR)/$(EXE)
 	cp $(BINDIR)/$(EXE) $(PREFIX)/$(EXE)
 
-rebuild: clean build
-
-
 ##
 #
 # a note on the "wall of text" which follows.
@@ -194,7 +198,7 @@ rebuild: clean build
 # this approach requires more typing, but yields
 # significantly faster build times.
 #
-# if you think you can acheive the same in fewer
+# if you think you can achieve the same in fewer
 # lines without "recursive make", please, do. perhaps
 # ninja could be adopted, so long as it is consistent
 # on linux, osx, and mingw, i personally don't care
