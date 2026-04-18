@@ -31,7 +31,6 @@ once you have the tools you can use `make` from the repo root (not from `src/`):
 ```bash
 make clean
 make build
-make rebuild # performs clean+build
 make all # an alias for `build`
 make install # installs to /usr/local/bin/
 ```
@@ -42,23 +41,34 @@ and remember, if you don't enjoy waiting 15+ minutes the Makefile is `--jobs` co
 make clean && make --jobs
 ```
 
-..and then appreciate that i went through the trouble of reworking the makefile. the old version had me wasting so much time between builds that i had enough time to reimplement the makefile to improve build times.
+..the old Makefile had me wasting so much time between builds that i had enough time to reimplement the makefile to improve build times (while waiting for builds!)
 
 ### Will it run on Windows? macOS?
 
-i have only compiled on "linux x86_64", but from what i have seen this code "should" cross-compile on Linux, macOS, and Windows operating systems targeting aarch64/arm64 and x86_64/amd64 processor architectures. but have i done it yet? no.
+i have only compiled on "linux x86_64", but from what i have seen this code "should" cross-compile on Linux, macOS, and Windows operating systems targeting aarch64/arm64 and x86_64/amd64 processor architectures.
+
+#### macOS (needs work)
+
+i have tested on OSX 13, 14, and now 15 and getting it to build on OSX still requires additional work, specifically:
+
+- `make` behaves differently on OSX and some targets need to be re-ordered.
+- `clang` seems to be enforcing c++ deprecations not enforced on GNU systems.
+- system `lzo` doesn't seem to resolve, forcing the use of the lzo shadow.
+- the masking of `fdopen` in the zlib shadow causes compilation errors.
+
+possibly other issues.. if someone wants to take a stab at fixing the OSX issues i will be more than happy to pull fixes .. otherwise, unless someone asks, i will add fixes as i can but as of yet OSX feels like a boss fight and i can't commit to fixing all of the issues i keep finding.
 
 #### Build on Windows using WSL
 
-You should be able to build under WSL using the `Debian` distribution, this may be the quickest solution for Windows users, as you can see nearer the end of this section you can somewhat hide the use of WSL if you're trying to automate from a Windows script or similar:
+you should be able to build under WSL using the `Debian` distribution, this may be the quickest solution for Windows users, as you can see nearer the end of this section you can somewhat hide the use of WSL if you're trying to automate from a Windows script or similar:
 
-From Windows shell:
+From a Windows Console/Terminal:
 
 ```console
 wsl --install Debian -n
 ```
 
-Then switch to the cloned repo from github, and enter the Debian container:
+Then switch to the cloned repo from github, and enter the WSL container:
 
 ```console
 cd C:\the\path\to\quickbms\
@@ -67,7 +77,7 @@ wsl -d Debian
 
 If it's the first run of the Linux container you should be prompted to set a username and password, set them to something you can remember, you may occasionally need them (such as for running `sudo`):
 
-From the Debian shell:
+From within WSL:
 
 ```bash
 # update base packages, and install pre-reqs
@@ -77,11 +87,11 @@ sudo apt-get install -y build-essential zlib1g-dev liblzo2-dev libssl-dev unicod
 
 # run make
 make clean && make --jobs
-# optionally, install to a common path
+# optionally, install to a common path inside WSL
 sudo make install
 ```
 
-If you want to run it from Windows (CLI) without having to drop into WSL permanently..
+If you want to run it from Windows (CLI) _without having to drop into WSL_..
 
 From Windows shell:
 
@@ -98,11 +108,11 @@ Or, if you did the optional `make install` step, you can avoid the need to use a
 wsl quickbms64
 ```
 
-Just keep in mind that the pathing from within Linux is different than Windows (your C drive is accessible from `/mnt/c/`, and all backslashes should be changed to forward slashes.)
+Just keep in mind that the pathing from within Linux is different than Windows (your C drive is accessible from `/mnt/c/` not `C:\`, and all backslashes should be changed to forward slashes.)
 
 
 ----
 
-> The original readme from the repository this was forked from can be found in [old_readme.md](old_readme.md).
+> The original readme from the repository this was forked from can be found in [quickbms.txt](quickbms.txt).
 
 ----
