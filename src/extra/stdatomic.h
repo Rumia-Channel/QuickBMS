@@ -67,7 +67,7 @@
 #endif
 
 #if !defined(__CLANG_ATOMICS) && !defined(__GNUC_ATOMICS)
-#if __has_feature(c_atomic)
+#if __has_feature(c_atomic) || __has_builtin(__c11_atomic_load)
 #define	__CLANG_ATOMICS
 #elif __GNUC_PREREQ__(4, 7)
 #define	__GNUC_ATOMICS

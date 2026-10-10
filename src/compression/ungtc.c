@@ -11,8 +11,8 @@
 
 
 #ifdef _WINDOWS
-#define READINFOBIT(v,p,c) {v=*((UINT32 *)p)++;c=32;}
-#define GETSRCWORD(v,p) v=*((UINT16 *)p)++
+#define READINFOBIT(v,p,c) {v=*((UINT32 *)p);p+=4;c=32;}
+#define GETSRCWORD(v,p) v=*((UINT16 *)p);p+=2
 #else
 #define READINFOBIT(v,p,c) {v=((*(p+3))<<24)+((*(p+2))<<16)+((*(p+1))<<8)+*p;p+=4;c=32;}
 #define GETSRCWORD(v,p) v=*p++;v+=((*p++)<<8)

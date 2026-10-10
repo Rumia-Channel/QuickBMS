@@ -431,7 +431,7 @@
 #  if (_MSC_VER < 700)
 #    undef HAVE_SNPRINTF
 #    undef HAVE_VSNPRINTF
-#  else
+#  elif (_MSC_VER < 1900)
 #    define snprintf _snprintf
 #    define vsnprintf _vsnprintf
 #  endif
