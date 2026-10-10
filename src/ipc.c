@@ -182,9 +182,9 @@ i32 ipc_handle_command_chunked_send(i32 sd, u8 *data, i32 size) {
     return size;
 }
 #define socket_printf_ \
-    __builtin_va_list __local_argv; __builtin_va_start( __local_argv, __format ); \
+    va_list __local_argv; va_start( __local_argv, __format ); \
     __retval = vspr(&buff, __format, __local_argv ); \
-    __builtin_va_end( __local_argv ); \
+    va_end( __local_argv ); \
     return ipc_handle_command_chunked_send(g_socket_printf_sd, buff, __retval);
 i32 /*__cdecl*/ socket_printf(const char *__format, ...) {
     static  u8  *buff = NULL;
@@ -197,9 +197,9 @@ i32 /*__cdecl*/ socket_fprintf(FILE *__stream, const char *__format, ...) {
     if((__stream == stdout) || (__stream == stderr)) {
     socket_printf_
     }
-  __builtin_va_list __local_argv; __builtin_va_start( __local_argv, __format );
+  va_list __local_argv; va_start( __local_argv, __format );
   __retval = /*__mingw_*/vfprintf( __stream, __format, __local_argv );
-  __builtin_va_end( __local_argv );
+  va_end( __local_argv );
   return __retval;
 }
 

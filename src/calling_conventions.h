@@ -62,7 +62,7 @@
 // 32bit registers
 // this is a project for reverse engineering stuff so I want to support
 // the 32bit dumped code on both x86 and x86_64
-#if defined(i386)
+#if defined(i386) && !defined(_MSC_VER)
 
     #define CALLCONV_INIT   va_list ap; \
                             long    i, \
@@ -321,7 +321,7 @@
         return(ret);
     }
 
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) && !defined(_MSC_VER)
 
 /*
     this is an attempt to create 64-bit versions

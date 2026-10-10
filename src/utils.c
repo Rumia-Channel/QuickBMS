@@ -20,8 +20,9 @@
 
 // QuickBMS general functions
 
-
-
+#if defined(_MSC_VER) && defined(WIN32)
+    #include <intrin.h>     // __debugbreak, used by set_int3 on MSVC/clang-cl
+#endif
 static const u8     hex_codes[] = "0123456789abcdef";
 
 
@@ -30,7 +31,21 @@ static const u8     hex_codes[] = "0123456789abcdef";
 static inline void set_int3(const void *dllname, const void *hlib, const void *funcname, const void *funcaddr, const void *argc) {
 //#define set_int3(dllname, hlib, funcname, funcaddr, argc) {
     if(g_int3) {
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(_MSC_VER)
+        // no GNU-style inline asm in MSVC/clang-cl x64: keep the data visible
+        // through globals and trigger the same int3 used for inspecting them
+        static volatile const void    *quickbms_int3_dllname,
+                                      *quickbms_int3_hlib,
+                                      *quickbms_int3_funcname,
+                                      *quickbms_int3_funcaddr,
+                                      *quickbms_int3_argc;
+        quickbms_int3_dllname  = dllname;
+        quickbms_int3_hlib     = hlib;
+        quickbms_int3_funcname = funcname;
+        quickbms_int3_funcaddr = funcaddr;
+        quickbms_int3_argc     = argc;
+        __debugbreak();     // intrin.h is already provided by windows.h/Intsafe.h
+#elif defined(__i386__) || defined(__x86_64__)
 #if __x86_64__
         __asm__ __volatile__ ("movq %0, %%rax" :: "g"(dllname)  :        "rcx", "rdx", "rsi", "rdi");
         __asm__ __volatile__ ("movq %0, %%rcx" :: "g"(hlib)     : "rax",        "rdx", "rsi", "rdi");
@@ -2274,7 +2289,12 @@ int check_is_dir(u8 *fname) {
     if(stat(fname, &xstat) < 0)
 #ifdef WIN32
 #if defined(_LARGE_FILES) && !defined(NOLFS)
-    #define _wstat  _wstati64
+    #undef _wstat
+    #ifdef _MSC_VER
+        #define _wstat  _wstat64
+    #else
+        #define _wstat  _wstati64
+    #endif
 #endif
     if(_wstat(native_utf8_to_unicode(fname), &xstat) < 0)                       // try without long name support
     if(_wstat(native_utf8_to_unicode(long_name_support(fname)), &xstat) < 0)    // try with long name support (fails with \\?\c:\)

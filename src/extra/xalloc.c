@@ -55,6 +55,10 @@
 
 #define XDBG_ALLOC_C
 
+// MSVC (and clang-cl) only predefines _WIN32
+#if defined(_WIN32) && !defined(WIN32)
+#define WIN32
+#endif
 
 
 #include <stdio.h>
@@ -81,6 +85,18 @@
     typedef struct {
         DWORD   RegionSize;
     } MEMORY_BASIC_INFORMATION;
+#endif
+
+// __builtin_return_address/__builtin_extract_return_addr are GCC builtins not
+// available on MSVC (and clang-cl): use the equivalent _ReturnAddress intrinsic
+#if defined(_MSC_VER)
+    #include <intrin.h>
+    #pragma intrinsic(_ReturnAddress)
+    #define xdbg_return_address(X)  _ReturnAddress()
+#elif defined(__GNUC__)
+    #define xdbg_return_address(X)  __builtin_extract_return_addr(__builtin_return_address(X))
+#else
+    #define xdbg_return_address(X)  NULL
 #endif
 
 
@@ -226,7 +242,7 @@ size_t xdbg_alloc_align(size_t size) {
         g_xdbg_pagesize = getpagesize();
         #endif
         if(!g_xdbg_pagesize) g_xdbg_pagesize = 4096;
-        if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# g_xdbg_pagesize %u (called by %p)\n", (uint32_t)g_xdbg_pagesize, __builtin_extract_return_addr(__builtin_return_address(0)));
+        if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# g_xdbg_pagesize %u (called by %p)\n", (uint32_t)g_xdbg_pagesize, xdbg_return_address(0));
     }
     size = (size + (g_xdbg_pagesize - 1)) & (~(g_xdbg_pagesize - 1));
     return(size);
@@ -363,7 +379,7 @@ size_t xdbg_alloc_size(void *ptr) {
 ptr: the buffer visible by the main program
 */
 void xdbg_real_free( void *ptr ) {
-    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# real_free(%p) (called by %p)\n", ptr, __builtin_extract_return_addr(__builtin_return_address(0)));
+    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# real_free(%p) (called by %p)\n", ptr, xdbg_return_address(0));
 
     if(!ptr) return;
 
@@ -432,7 +448,7 @@ void xdbg_free( void *ptr ) {
         return;
     }
 
-    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# free(%p) (called by %p)\n", ptr, __builtin_extract_return_addr(__builtin_return_address(0)));
+    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# free(%p) (called by %p)\n", ptr, xdbg_return_address(0));
 
     if(!ptr) return;
 
@@ -574,7 +590,7 @@ void xdbg_realloc_page_guard(void *ptr, size_t new_size) {
         g_xdbg_page_guard, &tmp)) XDBG_ALLOC_ERROR;    // post PAGE_GUARD
     #endif
 
-    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# realloc_page_guard(%p, %u, %u) (called by %p)\n", ptr, (uint32_t)new_size, (uint32_t)total_size, __builtin_extract_return_addr(__builtin_return_address(0)));
+    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# realloc_page_guard(%p, %u, %u) (called by %p)\n", ptr, (uint32_t)new_size, (uint32_t)total_size, xdbg_return_address(0));
 }
 
 
@@ -589,7 +605,7 @@ void *xdbg_malloc( size_t size ) {
 
     xdbg_alloc_init(&original, &size, &xsize);
 
-    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# malloc(%u) -> %u %u (called by %p)\n", (uint32_t)original, (uint32_t)size, (uint32_t)xsize, __builtin_extract_return_addr(__builtin_return_address(0)));
+    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# malloc(%u) -> %u %u (called by %p)\n", (uint32_t)original, (uint32_t)size, (uint32_t)xsize, xdbg_return_address(0));
 
     if(XDBG_HEAPVALIDATE) {
         if(!HeapValidate(GetProcessHeap(), 0, NULL)) XDBG_ALLOC_ERROR;
@@ -597,7 +613,7 @@ void *xdbg_malloc( size_t size ) {
 
     mem = xdbg_alloc_reuse(size);
     if(mem) {
-        if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# xdbg_alloc_reuse %p (called by %p)\n", mem, __builtin_extract_return_addr(__builtin_return_address(0)));
+        if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# xdbg_alloc_reuse %p (called by %p)\n", mem, xdbg_return_address(0));
 
         xdbg_alloc = XDBG_ALLOC_MEM2INFO(mem);
         xdbg_alloc->original    = original;
@@ -640,7 +656,7 @@ void *xdbg_malloc( size_t size ) {
 
     if(XDBG_ALLOC_VERBOSE)
         fprintf(stdout, "# %p (%p -> %p) = malloc(%u / %u / %u) (called by %p)\n",
-            mem, XDBG_ALLOC_MEM2PTR(mem), (unsigned char *)mem + xsize, (uint32_t)original, (uint32_t)size, (uint32_t)xsize, __builtin_extract_return_addr(__builtin_return_address(0)));
+            mem, XDBG_ALLOC_MEM2PTR(mem), (unsigned char *)mem + xsize, (uint32_t)original, (uint32_t)size, (uint32_t)xsize, xdbg_return_address(0));
     return(XDBG_ALLOC_MEM2PTR(mem));
 }
 
@@ -663,7 +679,7 @@ void *xdbg_realloc( void *ptr, size_t size ) {
         return(real_realloc(ptr, size));
     }
 
-    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# realloc(%p, %u) (called by %p)\n", ptr, (uint32_t)size, __builtin_extract_return_addr(__builtin_return_address(0)));
+    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# realloc(%p, %u) (called by %p)\n", ptr, (uint32_t)size, xdbg_return_address(0));
 
     if(!ptr) return(xdbg_malloc(size));
 
@@ -679,7 +695,7 @@ void *xdbg_realloc( void *ptr, size_t size ) {
 
     xdbg_alloc = XDBG_ALLOC_PTR2INFO(ptr);
     if(xdbg_alloc->size >= size) {  // aligned_allocated versus aligned_requested
-        if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# realloc reused same buffer %p (%u %u) (called by %p)\n", ptr, (uint32_t)size, (uint32_t)xdbg_alloc->size, __builtin_extract_return_addr(__builtin_return_address(0)));
+        if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# realloc reused same buffer %p (%u %u) (called by %p)\n", ptr, (uint32_t)size, (uint32_t)xdbg_alloc->size, xdbg_return_address(0));
         xdbg_alloc->original = original;
         //memset(ptr, 0, xdbg_alloc->size - original);  // takes really lot of time!
         //xdbg_realloc_page_guard(ptr, size);
@@ -714,7 +730,7 @@ void *xdbg_realloc( void *ptr, size_t size ) {
         void    *old_mem = XDBG_ALLOC_PTR2MEM(ptr); // not a problem for realloc_to_file
         size_t  tmp = XDBG_ALLOC_MEM2INFO(new_mem)->xsize;
         fprintf(stdout, "# %p (%p -> %p) = realloc(%p, %u / %u / %u) (called by %p)\n",
-            new_mem, new_ptr, (unsigned char *)new_mem + tmp, old_mem, (uint32_t)original, (uint32_t)size, (uint32_t)tmp, __builtin_extract_return_addr(__builtin_return_address(0)));
+            new_mem, new_ptr, (unsigned char *)new_mem + tmp, old_mem, (uint32_t)original, (uint32_t)size, (uint32_t)tmp, xdbg_return_address(0));
     }
     if(realloc_to_file) {
         fseek(fd, 0, SEEK_SET);
@@ -731,7 +747,7 @@ void *xdbg_realloc( void *ptr, size_t size ) {
 void *xdbg_calloc( size_t num, size_t size ) {
     if(!XDBG_ALLOC_ACTIVE) return(real_calloc(num, size));
 
-    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# calloc(%u, %u) (called by %p)\n", (uint32_t)num, (uint32_t)size, __builtin_extract_return_addr(__builtin_return_address(0)));
+    if(XDBG_ALLOC_VERBOSE) fprintf(stdout, "# calloc(%u, %u) (called by %p)\n", (uint32_t)num, (uint32_t)size, xdbg_return_address(0));
 
     uint64_t    tmp;
     tmp = (uint64_t)num * (uint64_t)size;

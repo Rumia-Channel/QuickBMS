@@ -18,9 +18,11 @@
     http://www.gnu.org/licenses/gpl-2.0.txt
 */
 
-#define _WIN32_WINNT    0x0601
-#define _WIN32_WINDOWS  0x0601
-#define WINVER          0x0601
+
+// the source code uses WIN32 everywhere but MSVC (and clang-cl) only predefines _WIN32
+#if defined(_WIN32) && !defined(WIN32)
+#define WIN32
+#endif
 
 //#define NOLFS
 #ifndef NOLFS   // 64 bit file support not really needed since the tool uses signed 32 bits at the moment, anyway I leave it enabled
@@ -38,6 +40,12 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <stddef.h>
+#ifdef _WIN32
+    #include <io.h>
+#else
+    #include <unistd.h>
+#endif
 #include <errno.h>
 #include <time.h>
 #include <stdarg.h>
@@ -150,9 +158,9 @@ int /*__cdecl*/ (*real_printf) (const char *__format, ...) = printf;
 int /*__cdecl*/ fake_fprintf(FILE *__stream, const char *__format, ...) {
     if((__stream == stdout) || (__stream == stderr)) return 0;
   register int __retval;
-  __builtin_va_list __local_argv; __builtin_va_start( __local_argv, __format );
+  va_list __local_argv; va_start( __local_argv, __format );
   __retval = /*__mingw_*/vfprintf( __stream, __format, __local_argv );
-  __builtin_va_end( __local_argv );
+  va_end( __local_argv );
   return __retval;
 }
 int /*__cdecl*/ (*backup_real_fprintf) (FILE *__stream, const char *__format, ...) = fprintf;
@@ -294,8 +302,14 @@ extern void des(unsigned char *, unsigned char *);
 #define DISABLE_BACKTRACE   // it makes the executable bigger and breaks compatibility with Win98 (_fstat64). Needs -lbfd -liberty
 
 #ifdef WIN32
+    #include <io.h>         // _get_osfhandle, _chsize_s, _access and POSIX-compatible aliases (fileno, setmode, unlink...)
+    #include <malloc.h>     // alloca
+    #include <process.h>    // spawnv
+    #ifdef _MSC_VER
+        #define setmode _setmode    // MSVC has no setmode()
+        #define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+    #endif
     #include <windows.h>
-    //#include <psapi.h>
     //#include <shlobj.h>
     //#include <tlhelp32.h>
     #include <wincrypt.h>
@@ -348,6 +362,22 @@ extern void des(unsigned char *, unsigned char *);
         #define fseek   fseeko
         #define ftell   ftello
     #elif defined(__FreeBSD__)
+    #elif defined(WIN32) && !defined(NOLFS)     // use -DNOLFS if this tool can't be compiled on your OS!
+        #define fseek   _fseeki64
+        #define ftell   _ftelli64
+        #ifdef _MSC_VER
+            #define stat        _stat64
+            #define fstat       _fstat64
+            #define ftruncate   _chsize_s
+        #else
+            #define off_t   off64_t
+            #define fopen   fopen64
+            #define ftruncate   ftruncate64
+            #ifndef fstat
+                #define fstat   _fstati64
+                #define stat    _stati64
+            #endif
+        #endif
     #elif !defined(NOLFS)       // use -DNOLFS if this tool can't be compiled on your OS!
         #define off_t   off64_t
         #define fopen   fopen64
@@ -355,29 +385,28 @@ extern void des(unsigned char *, unsigned char *);
         #define ftell   ftello64
         #define ftruncate   ftruncate64
         #ifndef fstat
-            #ifdef WIN32
-                #define fstat   _fstati64
-                #define stat    _stati64
-            #else
-                #define fstat   fstat64
-                #define stat    stat64
-            #endif
+            #define fstat   fstat64
+            #define stat    stat64
         #endif
     #endif
 #endif
 
 #ifndef __cdecl
-#if defined(__x86_64__)
-#define __cdecl
-#else
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64) || defined(__aarch64__) || defined(_M_ARM64)
+#define __cdecl     // x64/ARM64 have only one calling convention
+#elif !defined(_MSC_VER)
 #define __cdecl  __attribute__ ((__cdecl__))
 #endif
 #endif
 
 #ifndef __stdcall
-#if defined(__x86_64__) && defined(__GNUC__)
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64) || defined(__aarch64__) || defined(_M_ARM64)
+#if !defined(_MSC_VER) && defined(__GNUC__)
 #define __stdcall __attribute__ ((ms_abi))    // ???
 #else
+#define __stdcall     // x64/ARM64 have only one calling convention
+#endif
+#elif !defined(_MSC_VER)
 #define __stdcall __attribute__ ((__stdcall__))
 #endif
 #endif
@@ -895,6 +924,53 @@ void quickbms_args_error(i32 argc, char *argv[], i32 idx) {
 
 
 
+#ifdef WIN32
+    static int check_if_running_from_doubleclick(void) {
+        // -1 = error
+        // 0  = console
+        // 1  = gui/double-click
+
+        if(g_osver.dwMajorVersion > 4) {
+            // this method is very easy and works well, tested on XP/2003/win7/win8
+            // doesn't work with win98
+            #ifndef GWL_WNDPROC
+                #define GWL_WNDPROC -4
+            #endif
+            if(GetWindowLong(GetForegroundWindow(), GWL_WNDPROC)) {
+                return 1;
+            }
+            return 0;
+        }
+
+        // for Win98 only
+        int     ret = -1;
+        DWORD pid = GetCurrentProcessId();
+        if(pid) {
+            HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if(h != INVALID_HANDLE_VALUE) {
+                PROCESSENTRY32  pe, pp;
+                pe.dwSize = sizeof(PROCESSENTRY32);
+                if(Process32First(h, &pe)) { do {
+                    if(pe.th32ProcessID == pid) {
+                        pp.dwSize = sizeof(PROCESSENTRY32);
+                        if(Process32First(h, &pp)) { do {
+                            if(pp.th32ProcessID == pe.th32ParentProcessID) {
+                                     if(!stricmp(get_filename(pp.szExeFile), "winoa386.mod")) ret = 0;
+                                else if(!stricmp(get_filename(pp.szExeFile), "cmd.exe"))      ret = 0;
+                                else ret = 1;    // found but no command.com, so it's probably explorer.exe
+                                break;
+                            }
+                        } while(Process32Next(h, &pp)); }
+                        break;
+                    }
+                } while(Process32Next(h, &pe)); }
+                CloseHandle(h);
+            }
+        }
+        return ret;
+    }
+#endif
+
 i32 quickbms_main(i32 argc, char *argv[]) {
     static u8   filedir[PATHSZ + 1] = ".",  // don't waste the stack
                 bckdir[PATHSZ + 1]  = ".";
@@ -1022,50 +1098,6 @@ i32 quickbms_main(i32 argc, char *argv[]) {
     g_quickbms_argv = argv;
 
 #ifdef WIN32
-    int check_if_running_from_doubleclick(void) {
-        // -1 = error
-        // 0  = console
-        // 1  = gui/double-click
-
-        if(g_osver.dwMajorVersion > 4) {
-            // this method is very easy and works well, tested on XP/2003/win7/win8
-            // doesn't work with win98
-            #ifndef GWL_WNDPROC
-                #define GWL_WNDPROC -4
-            #endif
-            if(GetWindowLong(GetForegroundWindow(), GWL_WNDPROC)) {
-                return 1;
-            }
-            return 0;
-        }
-
-        // for Win98 only
-        int     ret = -1;
-        DWORD pid = GetCurrentProcessId();
-        if(pid) {
-            HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if(h != INVALID_HANDLE_VALUE) {
-                PROCESSENTRY32  pe, pp;
-                pe.dwSize = sizeof(PROCESSENTRY32);
-                if(Process32First(h, &pe)) { do {
-                    if(pe.th32ProcessID == pid) {
-                        pp.dwSize = sizeof(PROCESSENTRY32);
-                        if(Process32First(h, &pp)) { do {
-                            if(pp.th32ProcessID == pe.th32ParentProcessID) {
-                                     if(!stricmp(get_filename(pp.szExeFile), "winoa386.mod")) ret = 0;
-                                else if(!stricmp(get_filename(pp.szExeFile), "cmd.exe"))      ret = 0;
-                                else ret = 1;    // found but no command.com, so it's probably explorer.exe
-                                break;
-                            }
-                        } while(Process32Next(h, &pp)); }
-                        break;
-                    }
-                } while(Process32Next(h, &pe)); }
-                CloseHandle(h);
-            }
-        }
-        return ret;
-    }
 
     // necessary to handle the GUI and the secure memory
     // before the execption handler that may be used
@@ -1640,6 +1672,18 @@ redo:
 
 #ifdef WIN32
 
+#ifdef _MSC_VER
+i32 wmain(i32 argc, wchar_t *argv[]) {
+    i32     i;
+    char    *myargv[argc + 1];
+    for(i = 0; i < argc; i++) {
+        myargv[i] = mystrdup_simple(native_unicode_to_utf8(argv[i]));
+    }
+    myargv[i] = NULL;
+    return quickbms_main(argc, myargv);
+}
+#else
+
 extern i32 _CRT_glob;
 extern i32 __wgetmainargs(i32*,wchar_t***,wchar_t***,i32,i32*);
 
@@ -1660,6 +1704,7 @@ i32 main(i32 argc, char *argv[]) {
     }
     return quickbms_main(argc, argv);
 }
+#endif
 
 BOOL WINAPI DllMain(
     HINSTANCE hinstDLL,

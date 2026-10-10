@@ -29,8 +29,12 @@ typedef uint16_t    u16;
 typedef uint32_t    u32;
 typedef uint64_t    u64;
 
-
 #define SECNAMESZ   32
+
+// MSVC (and clang-cl) only predefines _WIN32
+#if defined(_WIN32) && !defined(WIN32)
+#define WIN32
+#endif
 #define MYPAD(X)    ((X + (q->sec_align - 1)) & (~(q->sec_align - 1)))
 #define MYALIGNMENT 0x1000  // default in case not available
 

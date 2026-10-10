@@ -53,6 +53,9 @@ web:    aluigi.org
     #include <ws2tcpip.h>
     #include <wspiapi.h>
     #include <direct.h>
+    #ifndef S_ISDIR
+        #define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+    #endif
     #define PATHSLASH   '\\'
     #define make_dir(x) mkdir(x)
     #define close       closesocket
@@ -84,6 +87,11 @@ web:    aluigi.org
         #define fseek   fseeko
         #define ftell   ftello
     #elif defined(__FreeBSD__)
+    #elif defined(_MSC_VER)
+        #define fseek   _fseeki64
+        #define ftell   _ftelli64
+        #define fstat   _fstat64
+        #define stat    _stat64
     #elif !defined(NOLFS)       // use -DNOLFS if this tool can't be compiled on your OS!
         #define off_t   off64_t
         #define fopen   fopen64
