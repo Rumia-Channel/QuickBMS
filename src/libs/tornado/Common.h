@@ -230,15 +230,25 @@ static inline void WINAPI UnixTimeToFileTime( time_t time, FILETIME* ft )
 
 #ifdef FREEARC_UNIX
 
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <utime.h>
-#ifdef WIN32
+#if defined(_MSC_VER)
+#include <io.h>
+#include <direct.h>
+#include <sys/utime.h>
+#include <stdint.h>
+#include <intrin.h>
+#define strcasecmp stricmp
+#define strncasecmp _strnicmp
+#define SSIZE_T intptr_t
 #else
+#include <unistd.h>
+#include <utime.h>
+#ifndef WIN32
 #define __cdecl
 #endif
 #define SSIZE_T ssize_t
+#endif
+#include <fcntl.h>
+#include <sys/types.h>
 
 typedef char  TCHAR;
 #define _T
@@ -280,7 +290,7 @@ typedef int (*FARPROC) (void);
 
 #if (GCC_VERSION >= 304)
 #  define prefetch(var)   __builtin_prefetch(&(var))
-#elif 1
+#elif defined(__SSE__) || defined(__SSE2__) || defined(_M_IX86) || defined(_M_X64) || defined(_M_AMD64)
 #include <xmmintrin.h>
 #  define prefetch(var)   (_mm_prefetch((char*)&(var),_MM_HINT_T0))
 #else
@@ -604,20 +614,20 @@ static inline int lb (MemSize n)
 {
     int result;
 #if __INTEL_COMPILER || (_MSC_VER >= 1400)
-#if defined(__x86_64) || defined(_M_X64)
-    _BitScanReverse64((DWORD *)&result, n);
+#if defined(__x86_64) || defined(_M_X64) || defined(_M_AMD64) || defined(__aarch64__) || defined(_M_ARM64)
+    _BitScanReverse64((unsigned long *)&result, n);
 #else
-    _BitScanReverse((DWORD *)&result, n);
+    _BitScanReverse((unsigned long *)&result, n);
 #endif
 #elif __GNUC__ == 3 && __GNUC_MINOR__ > 3 || __GNUC__ > 3
-#if defined(__x86_64) || defined(_M_X64)
+#if defined(__x86_64) || defined(_M_X64) || defined(__aarch64__) || defined(__LP64__)
      result = __builtin_clzll(n) ^ (8 * sizeof(unsigned long long) - 1);
 #else
      result = __builtin_clz(n)   ^ (8 * sizeof(unsigned int) - 1);
 #endif
 #else
     result = 0;
-#if defined(__x86_64) || defined(_M_X64)
+#if defined(__x86_64) || defined(_M_X64) || defined(__aarch64__) || defined(__LP64__) || defined(_M_ARM64)
     if (n > 0xffffffffu)  result  = 32, n >>= 32;
 #endif
     if (n > 0xffff)       result += 16, n >>= 16;

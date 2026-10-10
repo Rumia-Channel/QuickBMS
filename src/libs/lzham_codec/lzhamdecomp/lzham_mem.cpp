@@ -17,7 +17,7 @@ using namespace lzham;
 
 #define LZHAM_MEM_STATS 0
 
-#ifndef LZHAM_USE_WIN32_API
+#if !defined(LZHAM_USE_WIN32_API) && !defined(_WIN32) && !defined(WIN32)
    #ifndef __APPLE__
       #define _msize malloc_usable_size
    #else
@@ -103,10 +103,9 @@ namespace lzham
       else
       {
          void* p_final_block = p;
-#ifdef WIN32
+#if defined(_WIN32) || defined(WIN32)
          p_new = _expand(p, size);
 #else
-
          p_new = NULL;
 #endif
 

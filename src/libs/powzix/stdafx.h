@@ -24,6 +24,9 @@
 #include <immintrin.h>
 #include <stdint.h>
 #include <math.h>
+#if defined(_MSC_VER)
+#  include <intrin.h>
+#else
 #define __forceinline
 
     static inline uint16_t _byteswap_ushort(uint16_t x) {
@@ -62,6 +65,7 @@ static inline unsigned char _BitScanReverse(
 	if(Index) *Index = ret;
 	return Mask ? 1 : 0;
 }
+#endif
 
 // TODO: reference additional headers your program requires here
 typedef uint8_t byte;

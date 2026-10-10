@@ -9,7 +9,7 @@ namespace Ppmz2
 {
     class Coder
     {
-		typedef std::auto_ptr<Ppmz> SafePpmz;
+		typedef std::unique_ptr<Ppmz> SafePpmz;
     public:
 
 		Coder(void (*loggingCallback)(const std::string&))
