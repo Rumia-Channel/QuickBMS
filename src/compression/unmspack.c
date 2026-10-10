@@ -293,7 +293,7 @@ static struct mspack_system lzxSys =
 	int r = lzxd_decompress(lzxd, UncompressedSize);
 	if (r != MSPACK_ERR_OK)
 		return -1; //appError("lzxd_decompress(%d,%d) returned %d", CompressedSize, UncompressedSize, r);
-    int ret = mem_system.tell((void *)&src);
+    int ret = dst.pos;
 	// free resources
 	lzxd_free(lzxd);
 

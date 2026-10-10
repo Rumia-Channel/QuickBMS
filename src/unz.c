@@ -131,7 +131,6 @@ int zax_uncompress(unsigned char *infd, int insz, unsigned char *outfd, int outs
 #include "included/crush.c"
 #include "libs/liblzg/src/include/lzg.h"
 #include "libs/aplib/src/depacks.h"
-#include "libs/aplib/lib/coff/aplib.h"
 #include "included/xpksqsh.c"
 #include "included/unpxp.c"
 #include "included/boh.c"
@@ -245,7 +244,6 @@ int nintendo_ds_set_inout(unsigned char *in, int insz, unsigned char *out, int o
 #include "included/nintendo.c"
 int unpp20(unsigned char *in, int insz, unsigned char *out, int outsz);
 int unazo(unsigned char *in, int insz, unsigned char *out, int outsz);
-int __cdecl zen_decompress (char* pScrBuffer, char* pDstBuffer, int dwSize);
 int pucrunch_UnPack(int loadAddr, const unsigned char *data, unsigned char *file, int flags);
 static int clzw_outsz = 0;
 void lzw_writebuf(void *stream, char *buf, unsigned size) {
@@ -325,11 +323,6 @@ int hstest_hs_unpack(unsigned char *out, unsigned char *in, int insz);
 int hstest_unpackc(unsigned char *out, unsigned char *in, int insz);
 int unsixpack(unsigned char *in, int insz, unsigned char *out, int outsz);
 int unashford(unsigned char *in, int insz, unsigned char *out, int outsz);
-__stdcall int JCALG1_Decompress_Small(void *Source, void *Destination);
-__stdcall void * JCALG1_AllocFunc(unsigned nMemSize) { return(malloc(nMemSize)); }
-__stdcall int JCALG1_DeallocFunc(void *pBuffer) { free(pBuffer); return 1; }
-__stdcall int JCALG1_CallbackFunc(unsigned pSourcePos, unsigned pDestinationPos) { return 1; }
-__stdcall unsigned JCALG1_Compress(void *Source, unsigned Length, void *Destination, unsigned WindowSize, void *pAlloc, void *pDealloc, void *pCallback, int bDisableChecksum);
 int DecompressJCALG1(void *pDestination, const unsigned *pSource);
 int unjam(unsigned char *in, int insz, unsigned char *out, int outsz);
 int unsrank(unsigned char *in, int insz, unsigned char *out, int outsz);
@@ -1125,45 +1118,8 @@ int unbzip2_file(u8 *in, int insz, u8 **ret_out, int *ret_outsz) { // no reset i
 
 u32 swap32be(u32 n);
 u32 swap32le(u32 n);
-int unxmemlzx(u8 *in, int insz, u8 **ret_out, int *ret_outsz) {
-    typedef VOID*                       XMEMDECOMPRESSION_CONTEXT;
-    typedef enum _XMEMCODEC_TYPE {
-        XMEMCODEC_DEFAULT =             0,
-        XMEMCODEC_LZX =                 1
-    } XMEMCODEC_TYPE;
-    typedef struct _XMEMCODEC_PARAMETERS_LZX {
-        DWORD Flags;
-        DWORD WindowSize;
-        DWORD CompressionPartitionSize;
-    } XMEMCODEC_PARAMETERS_LZX;
+int unxmemlzx(u8 *in, int insz, u8 **ret_out, int *ret_outsz, int outsz) {
 
-#ifdef WIN32
-    HRESULT WINAPI XMemCreateDecompressionContext(
-        XMEMCODEC_TYPE                  CodecType,
-        CONST VOID*                     pCodecParams,
-        DWORD                           Flags,
-        XMEMDECOMPRESSION_CONTEXT*      pContext
-    );
-    HRESULT WINAPI XMemDecompress(
-        XMEMDECOMPRESSION_CONTEXT       Context,
-        VOID*                           pDestination,
-        SIZE_T*                         pDestSize,
-        CONST VOID*                     pSource,
-        SIZE_T                          SrcSize
-    );
-    HRESULT WINAPI XMemDecompressSegmentTD(
-        XMEMDECOMPRESSION_CONTEXT       Context,
-        VOID*                           pDestination,
-        SIZE_T*                         pDestSize,
-        CONST VOID*                     pSource,
-        SIZE_T                          SrcSize,
-        SIZE_T                          DestSize,
-        SIZE_T                          Offset
-    );
-    VOID WINAPI XMemDestroyDecompressionContext(
-        XMEMDECOMPRESSION_CONTEXT       Context
-    );
-#endif
 
     //#define XCOMPRESS_FILE_IDENTIFIER_LZXTDECODE        0x0FF512ED
     #pragma pack(2)
@@ -1195,22 +1151,19 @@ int unxmemlzx(u8 *in, int insz, u8 **ret_out, int *ret_outsz) {
     } xcompress_native_t;
     #pragma pack()
 
-    XMEMDECOMPRESSION_CONTEXT ctx = NULL;
-    XMEMCODEC_PARAMETERS_LZX  param;
+    int window_size = 128 * 1024;
+    int partition_size = 512 * 1024;
     xcompress_native_t  *xcompress_native = NULL;
     xcompress_decode_t  *xcompress_decode = NULL;
-    SIZE_T  ret,
+    int     ret,
             t;
     HRESULT hr;
-    int     i;
 
     not_ret_out_boh
 
     if(insz > 4) {
         u32 (*swap)(u32 n) = swap32be;
-        u32     CompressedBlockSize,
-                UncompressedBlockSize,
-                Flags;
+        u32     CompressedBlockSize;
         u64     CompressedSize,
                 UncompressedSize;
         u8      *inl = in + insz;
@@ -1230,91 +1183,11 @@ int unxmemlzx(u8 *in, int insz, u8 **ret_out, int *ret_outsz) {
         }
 
         if(xcompress_decode) {
-            Flags = swap(xcompress_decode->Flags);
-
-            int Segments = (Flags >> 6) & 0xffff;
-            static const int BitsPerSize_Table[4] = { 20, 32, 0, 0 };   // only 2 types exist
-            int BitsPerSize = BitsPerSize_Table[(Flags >> 0x16) & 3];
-            int CompressedBlockSize = 0x8000 << ((Flags >> 4) & 3);
-
-            u8 *segment = in;
-
-            in += sizeof(xcompress_decode_t);
-            if(in > inl) { ret = -1; goto quit; }
-
-            t = 20;
-            if(Flags & 0x00c00000) t += 12;
-            t = ((t * Segments) + 31) >> 5;
-
-            u8 *p = in + (t * 4);
-            if(p > inl) { ret = -1; goto quit; }
-
-            param.Flags = 0;
-            param.WindowSize = 1 << ((Flags & 0xf) + 0xf);
-            param.CompressionPartitionSize = 0;
-#ifdef WIN32
-            hr = XMemCreateDecompressionContext(
-                XMEMCODEC_DEFAULT,
-                &param,
-                0x80000000,
-                &ctx);
-            if(hr != S_OK) { ret = -1; goto quit; }
-#endif
-
-            int     extract;
-            u8      *backup_in = in;
-            for(extract = 0; extract < 2; extract++) {
-                u32     bits = 0,   // keep them here!
-                        old  = 0,
-                        num  = 0;
-                ret = 0;
-                in = backup_in;
-                for(i = 0; i < Segments; i++) {
-                    if(BitsPerSize & 31) {
-                        bits = (bits + BitsPerSize) & 31;
-                        if((bits > 0) && (bits <= BitsPerSize)) {
-                            num = swap(QUICK_GETi32(in));
-                            in += 4;
-                        } else {
-                            num = old;
-                            old = 0;
-                        }
-                        UncompressedBlockSize = (num >> (32 - bits)) | (old << bits);
-                        old = num & ((1 << (32 - bits)) - 1);
-                    } else {
-                        UncompressedBlockSize = swap(QUICK_GETi32(in));
-                        in += 4;
-                    }
-                    if(!extract) {
-                        ret += UncompressedBlockSize;
-                    } else {
-                        u32 Offset;
-                        for(Offset = 0; Offset < UncompressedBlockSize; Offset += t) {
-                            if(p > inl) { ret = -1; goto quit; }
-                            t = UncompressedBlockSize - Offset;
-                            if(t > CompressedBlockSize) t = CompressedBlockSize;
-#ifdef WIN32
-                            hr = XMemDecompressSegmentTD(ctx, *ret_out + ret, &t, p, CompressedBlockSize - (p - segment), UncompressedBlockSize, Offset);
-#else
-                            hr = -1;    // unsupported
-#endif
-                            if(hr != S_OK) { ret = -1; goto quit; }
-                            ret += t;
-                        }
-                        segment += CompressedBlockSize;
-                        p = segment;
-                    }
-                }
-                if(!extract) {
-                    myalloc(ret_out, ret, ret_outsz);
-                }
-            }
-
-            goto quit;
+            fprintf(stderr, "\nError: XMem LZX TD requires the unavailable 32-bit XMem library\n");
+            return -1;
         }
 
         if(xcompress_native) {
-            Flags = swap(xcompress_native->Flags);
             xcompress_native->WindowSize = swap(xcompress_native->WindowSize);
             xcompress_native->CompressionPartitionSize = swap(xcompress_native->CompressionPartitionSize);
             UncompressedSize = ((u64)swap(xcompress_native->UncompressedSizeHigh) << (u64)32) | (u64)swap(xcompress_native->UncompressedSizeLow);
@@ -1324,16 +1197,8 @@ int unxmemlzx(u8 *in, int insz, u8 **ret_out, int *ret_outsz) {
             if(in > inl) { ret = -1; goto quit; }
             if((inl - in) < CompressedSize) { ret = -1; goto quit; }
 
-            param.Flags = Flags;
-            param.WindowSize = xcompress_native->WindowSize;
-            param.CompressionPartitionSize = xcompress_native->CompressionPartitionSize;
-#ifdef WIN32
-            XMemCreateDecompressionContext(
-                XMEMCODEC_DEFAULT,
-                &param,
-                0,
-                &ctx);
-#endif
+            window_size = xcompress_native->WindowSize;
+            partition_size = xcompress_native->CompressionPartitionSize;
 
             myalloc(ret_out, UncompressedSize, ret_outsz);
 
@@ -1344,19 +1209,12 @@ int unxmemlzx(u8 *in, int insz, u8 **ret_out, int *ret_outsz) {
                 if((in + CompressedBlockSize) > inl) { ret = -1; goto quit; }
                 t = UncompressedSize - ret;
 
-                // normal version - DO NOT USE IT!!! it crashes with dsh_situation.xmac!
-                //hr = XMemDecompress(ctx, *ret_out + ret, &t, in, CompressedBlockSize);
-
                 // alternative version: added only to grant 100% compatibility (like the DMC4 note below) but it's useless
                 u8      tmp[MYALLOC_ZEROES];
                 memcpy(tmp, in + CompressedBlockSize, MYALLOC_ZEROES);
                 memset(in + CompressedBlockSize, 0, MYALLOC_ZEROES);
-#ifdef WIN32
-                hr = XMemDecompress(ctx, *ret_out + ret, &t, in, CompressedBlockSize + MYALLOC_ZEROES);
-#else
-                t = appDecompressLZX(                        in, CompressedBlockSize + MYALLOC_ZEROES, *ret_out + ret, t, param.WindowSize, param.CompressionPartitionSize);
+                t = appDecompressLZX(in, CompressedBlockSize + MYALLOC_ZEROES, *ret_out + ret, t, window_size, partition_size);
                 hr = (t < 0) ? -1 : S_OK;
-#endif
                 memcpy(in + CompressedBlockSize, tmp, MYALLOC_ZEROES);
 
                 if(hr != S_OK) { ret = -1; goto quit; }
@@ -1366,106 +1224,25 @@ int unxmemlzx(u8 *in, int insz, u8 **ret_out, int *ret_outsz) {
     }
 
     if(g_comtype_dictionary) {
-        param.Flags = 0;
-        param.WindowSize = 128 * 1024;  // 1<<17
-        param.CompressionPartitionSize = 512 * 1024;
-        //sscanf(g_comtype_dictionary, "%d %d",
         get_parameter_numbers(g_comtype_dictionary,
-            (int *)&param.WindowSize, (int *)&param.CompressionPartitionSize, NULL);
+            &window_size, &partition_size, NULL);
     }
 
-    // XMemResetDecompressionContext is used only for the streams
 
-#ifdef WIN32
-    hr = XMemCreateDecompressionContext(
-        XMEMCODEC_DEFAULT,
-        g_comtype_dictionary ? &param : NULL,
-        0,  // or also 0x80000000 but it seems the same
-        &ctx);
-    if(hr != S_OK) { ret = -1; goto quit; }
-#endif
-
-    ret = *ret_outsz;
-#ifdef WIN32
-    hr = XMemDecompress(ctx, *ret_out, &ret, in, insz + MYALLOC_ZEROES); // + MYALLOC_ZEROES: ehmmmm long story, watch myalloc() and DMC4
-#else
-    ret = appDecompressLZX(                  in, insz + MYALLOC_ZEROES, *ret_out, ret, param.WindowSize, param.CompressionPartitionSize);
+    ret = outsz;
+    ret = appDecompressLZX(in, insz + MYALLOC_ZEROES, *ret_out, ret, window_size, partition_size);
     hr = (ret < 0) ? -1 : S_OK;
-#endif
     if(hr != S_OK) { ret = -1; goto quit; }
 
 quit:
-#ifdef WIN32
-    if(ctx) XMemDestroyDecompressionContext(ctx);
-#endif
     return ret;
 }
 
 
 
 int xmem_compress(u8 *in, int insz, u8 *out, int outsz) {
-#ifdef WIN32
-    typedef VOID*                       XMEMCOMPRESSION_CONTEXT;
-    typedef enum _XMEMCODEC_TYPE {
-        XMEMCODEC_DEFAULT =             0,
-        XMEMCODEC_LZX =                 1
-    } XMEMCODEC_TYPE;
-    typedef struct _XMEMCODEC_PARAMETERS_LZX {
-        DWORD Flags;
-        DWORD WindowSize;
-        DWORD CompressionPartitionSize;
-    } XMEMCODEC_PARAMETERS_LZX;
-    HRESULT WINAPI XMemCreateCompressionContext(
-        XMEMCODEC_TYPE                  CodecType,
-        CONST VOID*                     pCodecParams,
-        DWORD                           Flags,
-        XMEMCOMPRESSION_CONTEXT*        pContext
-    );
-    HRESULT WINAPI XMemCompress(
-        XMEMCOMPRESSION_CONTEXT         Context,
-        VOID*                           pDestination,
-        SIZE_T*                         pDestSize,
-        CONST VOID*                     pSource,
-        SIZE_T                          SrcSize
-    );
-    VOID WINAPI XMemDestroyCompressionContext(
-        XMEMCOMPRESSION_CONTEXT         Context
-    );
-
-    XMEMCOMPRESSION_CONTEXT   ctx;
-    XMEMCODEC_PARAMETERS_LZX  param;
-    SIZE_T  ret;
-    HRESULT hr;
-
-    if(g_comtype_dictionary) {
-        param.Flags = 0;
-        param.WindowSize = 128 * 1024;
-        param.CompressionPartitionSize = 512 * 1024;
-        //sscanf(g_comtype_dictionary, "%d %d",
-        get_parameter_numbers(g_comtype_dictionary,
-            (int *)&param.WindowSize, (int *)&param.CompressionPartitionSize, NULL);
-    }
-
-    hr = XMemCreateCompressionContext(
-        XMEMCODEC_DEFAULT,
-        g_comtype_dictionary ? &param : NULL,
-        0,
-        &ctx);
-    if(hr != S_OK) { ret = -1; goto quit; }
-
-    // XMemResetCompressionContext is used only for the streams
-
-    ret = outsz;
-    hr = XMemCompress(ctx, out, &ret, in, insz); // no MYALLOC_ZEROES!
-    if(hr != S_OK) { ret = -1; goto quit; }
-
-quit:
-    if(ctx) XMemDestroyCompressionContext(ctx);
-    return ret;
-#else
-    fprintf(stderr, "\nError: XMemCompress is implemented on Windows only\n");
+    fprintf(stderr, "\nError: XMem compression requires the unavailable 32-bit XMem library\n");
     return -1;
-#endif
 }
 
 
@@ -3558,7 +3335,7 @@ int slz_triace(unsigned char *in, int insz, unsigned char **ret_out, int outsz, 
     u8      *raw = out,
             *raw_end = out + outsz;
 
-    if(mode == 4) return unxmemlzx(in, insz, ret_out, ret_outsz);
+    if(mode == 4) return unxmemlzx(in, insz, ret_out, ret_outsz, outsz);
     if(mode == 5) return unzip_dynamic(in, insz, ret_out, ret_outsz, 0);
 
     if (!mode) {
@@ -9943,15 +9720,7 @@ int konami_lz77_decompress(unsigned char *input, int input_len, unsigned char *o
 
 
 int aplib_compress(unsigned char *in, int insz, unsigned char *out) {
-    // long story short, only the coff is available which links well on gcc for Windows
-    // but I don't want to get annoyed linking different libraries for each platform,
-    // therefore Windows is ok while the others get a fake compressor (untested).
-#ifdef WIN32
-    u8  *workmem = malloc(aP_workmem_size(insz));
-    int outsz = aP_pack(in, out, insz, workmem, NULL, NULL);
-    FREE(workmem)
-    return outsz;
-#else
+    // Portable aPLib literal encoding; no architecture-specific COFF library.
     u8  bitchr=0,bitpos=0;
     u8  *o = out;
     int i;
@@ -9968,7 +9737,6 @@ int aplib_compress(unsigned char *in, int insz, unsigned char *out) {
     DOZBITS(o, 8, 0);
     if(bitpos) o++;
     return o - out;
-#endif
 }
 
 
@@ -10742,7 +10510,7 @@ int ungzip(u8 *in, int insz, u8 **ret_out, int *ret_outsz, int strict) {
         case 9:  fsize = inflate64(in, inl - in, out, fsize);               break;
         case 12: fsize = unbzip2(in, inl - in, out, fsize);                 break;
         case 14: fsize = unlzma(in, inl - in, &out, fsize, LZMA_FLAGS_EFS, &fsize, 0); break;
-        case 21: fsize = unxmemlzx(in, inl - in, &out, ret_outsz);          break;
+        case 21: fsize = unxmemlzx(in, inl - in, &out, ret_outsz, fsize);   break;
         case 64: fsize = undarksector(in, inl - in, out, fsize, 1);         break;
         case 98: fsize = ppmdi_decompress /*unppmdi*/ (in, inl - in, out, fsize); break;
         default: fsize = unzip_dynamic(in, inl - in, &out, ret_outsz, 0);   break;

@@ -1742,7 +1742,7 @@ int perform_compression(u8 *in, int zsize, u8 **ret_out, int size, int *outsize,
         QUICK_COMP_CASE(LZMA_86DECHEAD0) QUICK_COMP_CASE_LZMA_DOIT(,LZMA_FLAGS_PROP0 | LZMA_FLAGS_86_DECODER | LZMA_FLAGS_86_HEADER,0)  // contains the uncompressed size
         QUICK_COMP_CASE(LZMA_EFS0)       QUICK_COMP_CASE_LZMA_DOIT(,LZMA_FLAGS_PROP0 | LZMA_FLAGS_EFS,0)
         QUICK_COMP_CASE(BZIP2) size = unbzip2(in, zsize, out, size);
-        QUICK_COMP_CASE(XMEMLZX) t32 = *outsize; size = unxmemlzx(in, zsize, &out, &t32); *outsize = t32;
+        QUICK_COMP_CASE(XMEMLZX) size = unxmemlzx(in, zsize, &out, outsize, size);
         QUICK_COMP_CASE(HEX) size = unhex(in, zsize, out, size);
         QUICK_COMP_CASE(BASE64) size = unbase64(in, zsize, out, size);
         QUICK_COMP_CASE(UUENCODE) size = uudecode(in, zsize, out, size, 0);
@@ -1867,12 +1867,7 @@ int perform_compression(u8 *in, int zsize, u8 **ret_out, int size, int *outsize,
         QUICK_COMP_CASE(HSTEST2) size = hstest_unpackc(out, in, zsize);
         QUICK_COMP_CASE(SIXPACK) size = unsixpack(in, zsize, out, size);
         QUICK_COMP_CASE(ASHFORD) size = unashford(in, zsize, out, size);
-        QUICK_COMP_CASE(JCALG)
-#ifdef WIN32
-            size = JCALG1_Decompress_Small(in, out);
-#else
-            size = DecompressJCALG1(out, in);
-#endif
+        QUICK_COMP_CASE(JCALG) size = DecompressJCALG1(out, in);
         QUICK_COMP_CASE(JAM) size = unjam(in, zsize, out, size);
         QUICK_COMP_CASE(LZHLIB) size = unlzhlib(in, zsize, out, size);
         QUICK_COMP_CASE(SRANK) size = unsrank(in, zsize, out, size);
@@ -2495,13 +2490,7 @@ int perform_compression(u8 *in, int zsize, u8 **ret_out, int size, int *outsize,
         QUICK_COMP_CASE(BOH) size = unboh_unpack(in, zsize, out, size);
         QUICK_COMP_CASE(GRC) size = ungrc(in, zsize, out);
         QUICK_COMP_CASE(ZEN)
-            #ifdef WIN32
-            t32 = zen_decompress(in, out, size);
-            if(t32 < 0) size = -1;
-            else        size -= t32;    // usually t32 is zero which means ok
-            #else
             size = -1;
-            #endif
         QUICK_COMP_CASE(LZHUFXR)
             p = NULL;
             t32 = size;
@@ -3125,9 +3114,6 @@ int perform_compression(u8 *in, int zsize, u8 **ret_out, int size, int *outsize,
             if(!p) STD_ERR(QUICKBMS_ERROR_MEMORY);
             size = blz_pack(in, out, zsize, p);
             FREE(p);
-#ifdef WIN32    // the Linux alternative is using the compiled code directly
-        QUICK_COMP_CASE(JCALG_COMPRESS) QUICK_COMP_COMPRESS_DEFAULT(0); size = JCALG1_Compress(in, zsize, out, 1024 * 1024, &JCALG1_AllocFunc, &JCALG1_DeallocFunc, &JCALG1_CallbackFunc, 0); if(!size) size = -1;
-#endif
         QUICK_COMP_CASE(BCL_HUF_COMPRESS) QUICK_COMP_COMPRESS_DEFAULT(0); size = Huffman_Compress(in, out, zsize);
         QUICK_COMP_CASE(BCL_LZ_COMPRESS) QUICK_COMP_COMPRESS_DEFAULT(0); size = LZ_Compress(in, out, zsize);
         QUICK_COMP_CASE(BCL_RICE_COMPRESS)
