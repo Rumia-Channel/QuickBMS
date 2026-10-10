@@ -96,26 +96,22 @@ rebuilders.
 -------------------------------------------------------------------
 
 
-For Linux and MacOSX users there is a Makefile in the src folder,
-the only requirements are openssl, zlib and bzip2 while the
-optional components are mcrypt and tomcrypt (uncomment the line
-near the end of the Makefile to enable them).
-If your distro supports apt-get and you have problems during the
-usage of "make", try the following:
+This 64-bit fork builds with CMake and vcpkg from the repository root.
+See README.md for complete prerequisites and native Windows, Linux,
+and macOS instructions.
 
-  apt-get install gcc g++ zlib1g-dev libssl-dev unicode
+Windows uses Visual Studio 2022 with its LLVM clang-cl compiler,
+MSBuild LLVM toolset support, and a Windows SDK; it does not need WSL.
+Linux and macOS use Clang and Ninja. Set VCPKG_ROOT to a bootstrapped
+vcpkg checkout, then select the windows, linux, or macos CMake preset:
 
-In case of problems on 64bit versions of Linux, try also to append
-a ":i386" to the previous dependencies, like:
+  cmake --preset windows
+  cmake --build --preset windows --parallel
 
-  apt-get install libssl-dev:i386
-
-MacOSX users need to read the simple instructions written in the
-Makefile, just few steps for being able to compile QuickBMS easily
-without problems, anyway maybe try a "make" first because from
-version 0.8.1 it was rewritten to work easily.
-Updated static builds for Linux x86 and MacOSX are available on
-http://aluigi.altervista.org/quickbms.htm#builds
+Substitute linux or macos for the Unix presets. The default output is
+build/<preset>/bin/quickbms64 (quickbms64.exe on Windows).
+The manifest supplies OpenSSL 3 and zlib; specialized codecs are bundled.
+This fork's 64-bit compatibility limitations are listed in README.md.
 
 Feel free to contact me in case of problems or just post on
 https://zenhax.com
