@@ -1,0 +1,33 @@
+name: build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: 9e593bb18ea69cc5095e012465dcd675a822ed0d
+          path: .vcpkg
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          ./.vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          "VCPKG_ROOT=$pwd/.vcpkg" >> $env:GITHUB_ENV
+      - name: Configure Visual Studio ClangCL
+        run: cmake --preset windows
+      - name: Compile
+        run: cmake --build --preset windows --parallel
+      - name: Exercise CLI
+        run: cmake -DQUICKBMS=${{ github.workspace }}/build/windows/bin/quickbms64.exe -P cmake/Smoke.cmake
+      - name: Install
+        run: cmake --install build/windows --config Release --prefix build/install
