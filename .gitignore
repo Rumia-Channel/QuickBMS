@@ -4,3 +4,10 @@ obj/
 
 *.iml
 .idea/
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+/build/
+/vcpkg_installed/
+/CMakeUserPresets.json
+
+.serena
