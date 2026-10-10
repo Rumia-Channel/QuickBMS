@@ -1042,7 +1042,7 @@ int do_quickbms_hmac(u8 *data, int datalen, u8 *digest) {
     EVP_MD_CTX  *tmpctx = NULL;
 
     if(evpmd_ctx) {
-        tmpctx = calloc(1, sizeof(EVP_MD_CTX));
+        tmpctx = EVP_MD_CTX_new();
         if(!tmpctx) STD_ERR(QUICKBMS_ERROR_MEMORY);
     }
     if(hmac_ctx) {
@@ -1052,10 +1052,10 @@ int do_quickbms_hmac(u8 *data, int datalen, u8 *digest) {
     } else if(evpmd_ctx) {
         EVP_DigestUpdate(evpmd_ctx, data, datalen);
         EVP_MD_CTX_copy_ex(tmpctx, evpmd_ctx);
-        EVP_DigestFinal(evpmd_ctx, digest, &digest_len);
+        EVP_DigestFinal_ex(evpmd_ctx, digest, &digest_len);
     }
     if(evpmd_ctx) {
-        FREE(evpmd_ctx);
+        EVP_MD_CTX_free(evpmd_ctx);
         evpmd_ctx = tmpctx;
     }
 #endif
@@ -1269,30 +1269,30 @@ int perform_encryption(u8 *data, int datalen) {
         }
 
     } else QUICK_CRYPT_CASE(evp_ctx)
+        // Reimport normally recreates the context in the requested direction.
+        // Reinitializing that same direction would discard buffered data and IV.
+        i = -1;
         if(g_reimport) {
-            i = evp_ctx->encrypt;
-            evp_ctx->encrypt = g_encrypt_mode;
+            i = EVP_CIPHER_CTX_is_encrypting(evp_ctx);
+            if(i == !!g_encrypt_mode) i = -1;
+            else if(!EVP_CipherInit_ex(evp_ctx, NULL, NULL, NULL, NULL, g_encrypt_mode)) return -1;
         }
         tmp = datalen;  // failsafe
         EVP_CipherUpdate(evp_ctx, data, &tmp, data, datalen);
-        if(g_reimport) evp_ctx->encrypt = i;
         if(evp_do_final) {
             datalen = tmp;
             tmp = 0;    // failsafe
-            EVP_CipherFinal(evp_ctx, data + datalen, &tmp);
+            EVP_CipherFinal_ex(evp_ctx, data + datalen, &tmp);
             datalen += tmp;
         }
+        if((i >= 0) && !EVP_CipherInit_ex(evp_ctx, NULL, NULL, NULL, NULL, i)) return -1;
 
     } else QUICK_CRYPT_CASE(blowfish_ctx)
         if(!g_encrypt_mode) ENCRYPT_BLOCKS(8, BF_decrypt((void *)data, blowfish_ctx))
         else                ENCRYPT_BLOCKS(8, BF_encrypt((void *)data, blowfish_ctx))
 
     } else QUICK_CRYPT_CASE(aes_ctr_ctx)
-        // don't exist 192 and 256
         switch(aes_ctr_ctx->type) {
-            #if OPENSSL_VERSION_NUMBER < 0x10100000L
-            case aes_ctr_ctx_ctr:       AES_ctr128_encrypt(data, data, datalen, &aes_ctr_ctx->ctx, aes_ctr_ctx->ivec, aes_ctr_ctx->ecount, &aes_ctr_ctx->num);  break;
-            #endif
             case aes_ctr_ctx_ige:       AES_ige_encrypt(data, data, datalen, &aes_ctr_ctx->ctx, aes_ctr_ctx->ivec, g_encrypt_mode); break;
             case aes_ctr_ctx_bi_ige:    AES_bi_ige_encrypt(data, data, datalen, &aes_ctr_ctx->ctx, &aes_ctr_ctx->ctx, aes_ctr_ctx->ivec, g_encrypt_mode); break; // placeholder, it's wrong
             case aes_ctr_ctx_heat: {

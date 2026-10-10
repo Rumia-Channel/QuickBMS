@@ -177,20 +177,16 @@ int /*__cdecl*/ (*real_fprintf) (FILE *__stream, const char *__format, ...) = fp
     //#define OPENSSL_NO_KRB5
     #include <openssl/crypto.h>
     #include <openssl/ssl.h>
-    #if OPENSSL_VERSION_NUMBER >= 0x10100000L
-        #include "extra/evp_locl.h"     // this is a temporary work-around
-        #include "extra/hmac_lcl.h"     // this is a temporary work-around
-        #define HMAC_CTX_init   HMAC_CTX_reset
-        #define EVP_MD_CTX_cleanup(X)
-        #define HMAC_CTX_cleanup(X)
-    #endif
     #include <openssl/ossl_typ.h>
     #include <openssl/evp.h>
+    #include <openssl/provider.h>
     #include <openssl/aes.h>
     #include <openssl/blowfish.h>
     #include <openssl/hmac.h>
-    #include "extra/libcrypto-compat.h"
-    #include "extra/libcrypto-compat.c"
+    #include <openssl/rsa.h>
+    #include <openssl/dsa.h>
+    #include <openssl/ec.h>
+    #include <openssl/dh.h>
 #endif
 #include "encryption/tea.h"
 #include "encryption/xtea.h"

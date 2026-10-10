@@ -4780,64 +4780,18 @@ void *createRSA_bin2bn(unsigned char * key, int keysz, unsigned char *ivec, int 
 
 
 
-// the linked openssl 0.9.8 in MacOSX doesn't have the following functions,
-// avoid using -lssl -lcrypto
-#ifdef __APPLE__
-#if __x86_64__
-// no problem, we are linked to brew
-#else
-// this is 0.9.8
-const EVP_CIPHER *EVP_aes_128_cbc_hmac_sha1(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_128_cbc_hmac_sha256(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_128_ccm(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_128_ctr(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_128_gcm(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_128_wrap(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_128_xts(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_192_ccm(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_192_ctr(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_192_gcm(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_192_wrap(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_256_cbc_hmac_sha1(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_256_cbc_hmac_sha256(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_256_ccm(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_256_ctr(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_256_gcm(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_256_wrap(void) { return NULL; }
-const EVP_CIPHER *EVP_aes_256_xts(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_128_cbc(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_128_cfb1(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_128_cfb128(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_128_cfb8(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_128_ecb(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_128_ofb(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_192_cbc(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_192_cfb1(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_192_cfb128(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_192_cfb8(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_192_ecb(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_192_ofb(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_256_cbc(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_256_cfb1(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_256_cfb128(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_256_cfb8(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_256_ecb(void) { return NULL; }
-const EVP_CIPHER *EVP_camellia_256_ofb(void) { return NULL; }
-const EVP_CIPHER *EVP_des_ede3_wrap(void) { return NULL; }
-const EVP_CIPHER *EVP_idea_cbc(void) { return NULL; }
-const EVP_CIPHER *EVP_idea_cfb64(void) { return NULL; }
-const EVP_CIPHER *EVP_idea_ecb(void) { return NULL; }
-const EVP_CIPHER *EVP_idea_ofb(void) { return NULL; }
-const EVP_CIPHER *EVP_rc4_hmac_md5(void) { return NULL; }
-const EVP_MD *EVP_whirlpool(void) { return NULL; }
-SSL_SESSION *PEM_read_bio_SSL_SESSION(BIO *bp, SSL_SESSION **x, pem_password_cb *cb, void *u) { return NULL; }
-int PKCS5_PBKDF2_HMAC(const char *pass, int passlen, const unsigned char *salt, int saltlen, int iter, const EVP_MD *digest, int keylen, unsigned char *out) { return 0; }
-const SSL_METHOD *TLSv1_1_method(void) { return NULL; }
-const SSL_METHOD *TLSv1_2_method(void) { return NULL; }
-#endif
-#endif
 
 
+
+#ifndef DISABLE_SSL
+static OSSL_PROVIDER *openssl_default_provider = NULL;
+static OSSL_PROVIDER *openssl_legacy_provider = NULL;
+
+static void quickbms_openssl_cleanup_providers(void) {
+    if(openssl_legacy_provider) OSSL_PROVIDER_unload(openssl_legacy_provider);
+    if(openssl_default_provider) OSSL_PROVIDER_unload(openssl_default_provider);
+}
+#endif
 
 int openssl_get_algo(u8 *type, const EVP_CIPHER **mycrypto, const EVP_MD **myhash) {
 #define AUTO_openssl_get_algo(X,Y) \
@@ -5123,12 +5077,12 @@ int CMD_Encryption_func(int cmd, int invert_mode_and_crc) {
     } else {
     // reset ANY ctx
 #ifndef DISABLE_SSL
-    FREEX(evp_ctx, EVP_CIPHER_CTX_cleanup(evp_ctx))
-    FREEX(evpmd_ctx, EVP_MD_CTX_cleanup(evpmd_ctx))
+    if(evp_ctx)   { EVP_CIPHER_CTX_free(evp_ctx);   evp_ctx   = NULL; }
+    if(evpmd_ctx) { EVP_MD_CTX_free(evpmd_ctx);     evpmd_ctx = NULL; }
+    if(hmac_ctx)  { HMAC_CTX_free(hmac_ctx);        hmac_ctx  = NULL; }
     FREE(blowfish_ctx)
     FREE(aes_ctr_ctx)
     FREE(zip_aes_ctx)
-    FREEX(hmac_ctx, HMAC_CTX_cleanup(hmac_ctx))
     FREEX(modpow_ctx,
         BN_free(modpow_ctx->n);
         BN_free(modpow_ctx->e);
@@ -5277,6 +5231,14 @@ int CMD_Encryption_func(int cmd, int invert_mode_and_crc) {
 
 #ifndef DISABLE_SSL
     if(!load_algos) {
+        openssl_default_provider = OSSL_PROVIDER_load(NULL, "default");
+        openssl_legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+        if(!openssl_default_provider || !openssl_legacy_provider) {
+            quickbms_openssl_cleanup_providers();
+            fprintf(stderr, "\nError: OpenSSL default and legacy providers are required\n");
+            myexit_cmd(cmd, QUICKBMS_ERROR_ENCRYPTION);
+        }
+        atexit(quickbms_openssl_cleanup_providers);
         OpenSSL_add_all_algorithms();
         load_algos = 1;
     }
@@ -5343,19 +5305,26 @@ int CMD_Encryption_func(int cmd, int invert_mode_and_crc) {
                 break;
             }
         }
-        aes_ctr_ctx = calloc(1, sizeof(aes_ctr_ctx_t));
-        if(!aes_ctr_ctx) STD_ERR(QUICKBMS_ERROR_MEMORY);
-        if(!g_encrypt_mode) {
-            AES_set_decrypt_key(key, keysz << 3, &aes_ctr_ctx->ctx);
+        if(!stristr(type, "ige") && !stristr(type, "heat")) {
+            switch(keysz << 3) {
+                case 128: mycrypto = EVP_aes_128_ctr(); break;
+                case 192: mycrypto = EVP_aes_192_ctr(); break;
+                case 256: mycrypto = EVP_aes_256_ctr(); break;
+            }
         } else {
-            AES_set_encrypt_key(key, keysz << 3, &aes_ctr_ctx->ctx);
-        }
-        if((ivecsz > 0) && (ivecsz <= AES_BLOCK_SIZE)) memcpy(aes_ctr_ctx->ivec, ivec, ivecsz);
+            aes_ctr_ctx = calloc(1, sizeof(aes_ctr_ctx_t));
+            if(!aes_ctr_ctx) STD_ERR(QUICKBMS_ERROR_MEMORY);
+            if(!g_encrypt_mode) {
+                AES_set_decrypt_key(key, keysz << 3, &aes_ctr_ctx->ctx);
+            } else {
+                AES_set_encrypt_key(key, keysz << 3, &aes_ctr_ctx->ctx);
+            }
+            if((ivecsz > 0) && (ivecsz <= AES_BLOCK_SIZE)) memcpy(aes_ctr_ctx->ivec, ivec, ivecsz);
 
-                                         aes_ctr_ctx->type = aes_ctr_ctx_ctr;
-             if(stristr(type, "bi_ige")) aes_ctr_ctx->type = aes_ctr_ctx_bi_ige;
-        else if(stristr(type, "ige"))    aes_ctr_ctx->type = aes_ctr_ctx_ige;
-        else if(stristr(type, "heat"))   aes_ctr_ctx->type = aes_ctr_ctx_heat;
+                 if(stristr(type, "bi_ige")) aes_ctr_ctx->type = aes_ctr_ctx_bi_ige;
+            else if(stristr(type, "ige"))    aes_ctr_ctx->type = aes_ctr_ctx_ige;
+            else                            aes_ctr_ctx->type = aes_ctr_ctx_heat;
+        }
 
 #endif
 
@@ -5951,10 +5920,9 @@ int CMD_Encryption_func(int cmd, int invert_mode_and_crc) {
         }
 
         if(zip_aes_ctx->type >= 0x45410002) {
-            hmac_ctx = calloc(1, sizeof(HMAC_CTX));
+            hmac_ctx = HMAC_CTX_new();
             if(!hmac_ctx) STD_ERR(QUICKBMS_ERROR_MEMORY);
-            HMAC_CTX_init(hmac_ctx);
-            HMAC_Init(hmac_ctx, key + keysz, keysz, EVP_sha1());
+            HMAC_Init_ex(hmac_ctx, key + keysz, keysz, EVP_sha1(), NULL);
         }
 
     } else if(!strnicmp(type, "modpow", 6)) {
@@ -5996,10 +5964,9 @@ int CMD_Encryption_func(int cmd, int invert_mode_and_crc) {
 
 #ifndef DISABLE_SSL
     if(mycrypto) {  // handled as last because it's global for OpenSSL
-        evp_ctx = calloc(1, sizeof(EVP_CIPHER_CTX));
+        evp_ctx = EVP_CIPHER_CTX_new();
         if(!evp_ctx) STD_ERR(QUICKBMS_ERROR_MEMORY);
-        EVP_CIPHER_CTX_init(evp_ctx);
-        if(!EVP_CipherInit(evp_ctx, mycrypto, NULL, NULL, g_encrypt_mode)) {
+        if(!EVP_CipherInit_ex(evp_ctx, mycrypto, NULL, NULL, NULL, g_encrypt_mode)) {
             fprintf(stderr, "\nError: EVP_CipherInit failed\n");
             myexit_cmd(cmd, QUICKBMS_ERROR_ENCRYPTION);
         }
@@ -6008,30 +5975,22 @@ int CMD_Encryption_func(int cmd, int invert_mode_and_crc) {
             myexit_cmd(cmd, QUICKBMS_ERROR_ENCRYPTION);
         }
         //EVP_CIPHER_CTX_set_padding(evp_ctx, 0);   // do not enable it: "If the pad parameter is zero then no padding is performed, the total amount of data encrypted or decrypted must then be a multiple of the block size or an error will occur."
-        if(!EVP_CipherInit(evp_ctx,
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-            mycrypto    // in the past I used NULL but 1.1 requires mycrypto and it works with 1.0 too, I didn't test if rc4 works on 1.1
-#else
-            NULL        // do NOT use mycrypto or some algorithms like rc4 will not work!!!
-#endif
-            , key, ivec, g_encrypt_mode)) {
+        if(!EVP_CipherInit_ex(evp_ctx, NULL, NULL, key, ivec, g_encrypt_mode)) {
             fprintf(stderr, "\nError: EVP_CipherInit key failed\n");
             myexit_cmd(cmd, QUICKBMS_ERROR_ENCRYPTION);
         }
     }
     if(myhash) {    // handled as last because it's global for OpenSSL
-        evpmd_ctx = calloc(1, sizeof(EVP_MD_CTX));
+        evpmd_ctx = EVP_MD_CTX_new();
         if(!evpmd_ctx) STD_ERR(QUICKBMS_ERROR_MEMORY);
-        EVP_MD_CTX_init(evpmd_ctx);
-        if(!EVP_DigestInit(evpmd_ctx, myhash)) {
+        if(!EVP_DigestInit_ex(evpmd_ctx, myhash, NULL)) {
             fprintf(stderr, "\nError: EVP_DigestInit failed\n");
             myexit_cmd(cmd, QUICKBMS_ERROR_ENCRYPTION);
         }
         if(hmac) {
-            hmac_ctx = calloc(1, sizeof(HMAC_CTX));
+            hmac_ctx = HMAC_CTX_new();
             if(!hmac_ctx) STD_ERR(QUICKBMS_ERROR_MEMORY);
-            HMAC_CTX_init(hmac_ctx);
-            HMAC_Init(hmac_ctx, key, keysz, EVP_MD_CTX_md(evpmd_ctx));
+            HMAC_Init_ex(hmac_ctx, key, keysz, EVP_MD_CTX_md(evpmd_ctx), NULL);
         }
     }
 #endif
@@ -6645,7 +6604,7 @@ int CMD_CallDLL_quick_check_memory(void *addr) {
 #define PyObject            void
 #define PyCompilerFlags     void
 #define PyByteArrayObject   void
-typedef ssize_t         Py_ssize_t;
+typedef ptrdiff_t       Py_ssize_t;
 #       define PyAPI_FUNC(RTYPE) RTYPE
 #define Py_single_input 256
 #define Py_file_input 257

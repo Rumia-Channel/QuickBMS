@@ -478,7 +478,6 @@ typedef struct {
     int         type;
 } aes_ctr_ctx_t;
 enum {
-    aes_ctr_ctx_ctr,
     aes_ctr_ctx_ige,
     aes_ctr_ctx_bi_ige,
     aes_ctr_ctx_heat,
